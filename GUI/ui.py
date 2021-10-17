@@ -1,4 +1,7 @@
 import sys
+import threading
+import time
+from chat_client import ChatClient
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QApplication, QWidget, QMessageBox, QCheckBox, QListWidget, QPushButton, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QLineEdit
 
@@ -17,9 +20,13 @@ class Connect(QtWidgets.QWidget):
         grid.addWidget(QLabel('Port:'), 1, 0)
         grid.addWidget(QLabel('Nick Name:'), 2, 0)
 
-        grid.addWidget(QLineEdit(), 0, 1)
-        grid.addWidget(QLineEdit(), 1, 1)
-        grid.addWidget(QLineEdit(), 2, 1)
+        self.ipAddress = QLineEdit()
+        self.port = QLineEdit()
+        self.nickName = QLineEdit()
+
+        grid.addWidget(self.ipAddress, 0, 1)
+        grid.addWidget(self.port, 1, 1)
+        grid.addWidget(self.nickName, 2, 1)
 
         #buttons
         hbox = QHBoxLayout()
@@ -41,13 +48,32 @@ class Connect(QtWidgets.QWidget):
         self.resize(500,500)
 
     def connect(self):
-        self.switch_window.emit()
+        self.ip = self.ipAddress.text()
+        self.port = self.port.text()
+        self.name = self.nickName.text()
 
+        try:
+            self.client = ChatClient()
+            # Set up a background thread for user input
+            self.threading1 = threading.Thread(target=self.background)
+            self.threading1.start()
+            self.client.workerSignal.connect(self.finished)
+            
+        except ValueError as e:
+            pass
+    
+    def finished(self):
+        self.switch_window.emit()
+    
+    # Running on background to receive messages from server
+    def background(self):
+        self.client.initialisation(name=self.name, port=int(self.port), host=self.ip)                
 class Connected(QtWidgets.QWidget):
     switch_window = QtCore.pyqtSignal(int, str)
 
     def __init__(self):
         QtWidgets.QWidget.__init__(self)
+        self.pageOpen = True
         vbox = QVBoxLayout()
         font = self.font()
         font.setPointSize(14)
@@ -56,29 +82,22 @@ class Connected(QtWidgets.QWidget):
         privateChatLabel = QLabel("Connected Clients")
         privateChatLabel.setFont(font)
         noticeMessage = QLabel("*Click on a person to chat")
-        listClients = QListWidget()
-        listClients.addItem("private chat")
-        listClients.clicked.connect(self.privateChat)
+        self.listClients = QListWidget()
+        self.listClients.clicked.connect(self.privateChat)
+
 
         # Display a list of groups
         groupChatLabel = QLabel("Chats rooms (Group chat)")
         groupChatLabel.setFont(font)
         noticeMessage2 = QLabel("*Click on a group to join a group chat")
-        listGroups = QListWidget()
-        listGroups.addItem("public chat")
-        listGroups.addItem("public chat")
-        listGroups.addItem("public chat")
-        listGroups.addItem("public chat")
-        listGroups.addItem("public chat")
-        listGroups.addItem("public chat")
-        listGroups.addItem("public chat")
-        listGroups.addItem("public chat")
-        listGroups.addItem("public chat")
-        listGroups.clicked.connect(self.groupChat)
+        self.listGroups = QListWidget()
+        self.listGroups.clicked.connect(self.groupChat)
 
+        
         # Create new group chats
         connectButton = QPushButton('CREATE A GROUP CHAT', self)
         connectButton.clicked.connect(self.createGroup)
+
         
         # Back to connection page
         cancelButton = QPushButton('Back',self)
@@ -86,37 +105,85 @@ class Connected(QtWidgets.QWidget):
 
         vbox.addWidget(privateChatLabel)
         vbox.addWidget(noticeMessage)
-        vbox.addWidget(listClients)
+        vbox.addWidget(self.listClients)
         vbox.addWidget(groupChatLabel)
         vbox.addWidget(noticeMessage2)
-        vbox.addWidget(listGroups)
+        vbox.addWidget(self.listGroups)
         vbox.addWidget(connectButton)
         vbox.addWidget(cancelButton)
         self.setLayout(vbox)
 
         self.setWindowTitle('Chat Room')
         self.resize(500,500)
-
+        self.generatePageLists()
+        # Set up a background thread for receiving message
+        threading1 = threading.Thread(target= self.background)
+        threading1.start()
+    
     def back(self):
+        self.pageOpen = False
         self.switch_window.emit(3, "back")
 
     def privateChat(self):
-        self.switch_window.emit(0,"hello")
+        self.pageOpen = False
+        name = self.listClients.selectedItems()[0].text()
+        self.switch_window.emit(0,name)
 
-    
     def groupChat(self):
-        self.switch_window.emit(1, "hi")
+        self.pageOpen = False
+        client = ChatClient()
+        roomName = self.listGroups.selectedItems()[0].text()
+        client.joinRoomRequest(roomName)
+        self.switch_window.emit(1, roomName)
 
-    
     def createGroup(self):
-        self.switch_window.emit(2, "create")
+        client = ChatClient()
+        client.createRoomRequest()
+        client.createRoomSignal.connect(self.jumpToRoom)
+    
+    def jumpToRoom(self, roomName):
+        self.pageOpen = False
+        client = ChatClient()
+        client.roomMembers[roomName] = [client.name]
+        self.switch_window.emit(2, roomName)
+    
+    def generatePageLists(self):
+        # Clean the lists
+        self.listClients.clear()
+        self.listGroups.clear()
+        connectedClient = ChatClient()
+
+        # Populate the clients
+        clients = connectedClient.connectedClientMap.keys()
+        for client in clients:
+            self.listClients.addItem(connectedClient.connectedClientMap[client])
+
+        # Populate the rooms
+        rooms = connectedClient.roomHistory.keys()
+        for room in rooms:
+            self.listGroups.addItem(room)
+    
+    def background(self):
+        while self.pageOpen is True:
+            self.generatePageLists()
+            time.sleep(5)
+    def setPageOpenTrue(self):
+        self.pageOpen = True
 
 class PrivateChat(QtWidgets.QWidget):
     switch_window = QtCore.pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, name):
         QtWidgets.QWidget.__init__(self)
+        self.pageOpen = True
+        self.client = ChatClient()
+        self.clientName = name
+        self.roomName = "Chat with "+name
         self.initUI()
+        # Set up a background thread for receiving message
+        threading1 = threading.Thread(target= self.background)
+        threading1.start()
+        
 
     def initUI(self):
         vbox = QVBoxLayout()
@@ -124,11 +191,12 @@ class PrivateChat(QtWidgets.QWidget):
         font.setPointSize(14)
 
         # Chat history
-        labelText = "Chat With Alice"
+        client = ChatClient()
+        client.connectedClientMap
+        labelText = self.roomName
         titleLabel = QLabel(labelText)
         titleLabel.setFont(font)
-        chatHistory = QListWidget()
-        chatHistory.addItem("Alice (08:24): Hi")
+        self.chatList = QListWidget()
 
         # Sending messages
         hbox = QHBoxLayout()
@@ -142,44 +210,65 @@ class PrivateChat(QtWidgets.QWidget):
         cancelButton = QPushButton('Back',self)
         cancelButton.clicked.connect(self.back)
 
-
         vbox.addWidget(titleLabel)
-        vbox.addWidget(chatHistory)
+        vbox.addWidget(self.chatList)
         vbox.addLayout(hbox)
         vbox.addWidget(cancelButton)
+
+        self.generateMessagesList(self.clientName)
         self.setLayout(vbox)
-
         self.resize(500,500)
-    
-    def sendMessage(self):
-        print("Sending a message")
-        print(self.inputText.text())
-    
-    def back(self):
-        self.switch_window.emit()
 
+    def background(self):
+        while self.pageOpen is True:
+            self.generateMessagesList(self.clientName)
+            time.sleep(5)
+
+    def sendMessage(self):
+        client = ChatClient()
+        clientAddress = client.getConnectedClientAddress(self.clientName)
+        client.sendMessage(ipAddress=clientAddress, message=self.inputText.text())
+        self.inputText.setText('')
+        self.generateMessagesList(self.clientName)
+    
+    def generateMessagesList(self, name):
+        client = ChatClient()
+        assignedPort = client.getConnectedClientAssignedPort(name)
+        self.chatList.clear()
+
+        if assignedPort in client.chatHistory.keys():
+            for message in client.chatHistory[assignedPort]:
+                self.chatList.addItem(message[0]+': '+message[1])
+
+    def back(self):
+        self.pageOpen=False
+        self.switch_window.emit()
 class GroupChat(QtWidgets.QWidget):
     switch_window = QtCore.pyqtSignal(int)
 
-    def __init__(self):
+    def __init__(self, roomName):
         QtWidgets.QWidget.__init__(self)
+        self.pageOpen = True
+        self.roomName = roomName
         self.initUI()
+        # Set up a background thread for receiving message
+        threading1 = threading.Thread(target= self.background)
+        threading1.start()
+
 
     def initUI(self):
         horizontalLayout = QHBoxLayout()
         font = self.font()
         font.setPointSize(14)
 
-
         # Chating side of screen
         chatSide = QVBoxLayout()
 
         # Chat history
-        labelText = "Room 1 by Alice"
+        labelText = self.roomName
         titleLabel = QLabel(labelText)
         titleLabel.setFont(font)
-        chatHistory = QListWidget()
-        chatHistory.addItem("Alice (08:24): Hi")
+        self.roomChats = QListWidget()
 
         # Sending messages
         hbox = QHBoxLayout()
@@ -194,7 +283,7 @@ class GroupChat(QtWidgets.QWidget):
         cancelButton.clicked.connect(self.back)
 
         chatSide.addWidget(titleLabel)
-        chatSide.addWidget(chatHistory)
+        chatSide.addWidget(self.roomChats)
         chatSide.addLayout(hbox)
         chatSide.addWidget(cancelButton)
         
@@ -203,33 +292,59 @@ class GroupChat(QtWidgets.QWidget):
         labelText = "Member"
         titleLabel = QLabel(labelText)
         titleLabel.setFont(font)
-        listMembers = QListWidget()
-        listMembers.addItem("Alice (Host)")
+        self.listMembers = QListWidget()
 
         inviteButton = QPushButton('Invite',self)
         inviteButton.clicked.connect(self.invite)
         memberSide.addWidget(titleLabel)
-        memberSide.addWidget(listMembers)
+        memberSide.addWidget(self.listMembers)
         memberSide.addWidget(inviteButton)
 
         horizontalLayout.addLayout(chatSide, 7)
         horizontalLayout.addLayout(memberSide, 3)
+        self.generateMessagesList(self.roomName)
 
         self.setLayout(horizontalLayout)
 
         self.resize(500,500)
     
+    def generateMessagesList(self, roomName):
+        self.roomChats.clear()
+        client = ChatClient()
+        print(client.roomHistory)
+        for message in client.roomHistory[roomName]:
+            self.roomChats.addItem(message[0]+': '+message[1])
+    
+    def generateMemberList(self, roomName):
+        self.listMembers.clear()
+        client = ChatClient()
+        print(client.roomMembers)
+        if roomName in client.roomMembers.keys():
+            for member in client.roomMembers[roomName]:
+                self.listMembers.addItem(member)
+    
     def sendMessage(self):
         print("Sending a message")
         print(self.inputText.text())
+        client = ChatClient()
+        client.sendGroupMessage(self.roomName, self.inputText.text())
+        self.inputText.setText('')
+        self.generateMessagesList(self.roomName)
     
     def back(self):
-        print("go back")
+        self.pageOpen = False
         self.switch_window.emit(0)   
 
     def invite(self):
         print("invite")
         self.switch_window.emit(1)
+    
+    def background(self):
+        while self.pageOpen is True:
+            self.generateMessagesList(self.roomName)
+            self.generateMemberList(self.roomName)
+            print("background is running")
+            time.sleep(5)
 
 class Invite(QtWidgets.QWidget):
     switch_window = QtCore.pyqtSignal()
@@ -319,8 +434,8 @@ class Controller:
         self.connect.close()
         self.connected.show()
     
-    def showPrivateRoom(self):
-        self.client = PrivateChat()
+    def showPrivateRoom(self, name):
+        self.client = PrivateChat(name)
         self.client.switch_window.connect(self.backFromPrivateRoom)
         self.connected.close()
         self.client.show()
@@ -331,8 +446,8 @@ class Controller:
         self.client.close()
         self.connected.show()
     
-    def showGroupChat(self):
-        self.group = GroupChat()
+    def showGroupChat(self, roomName):
+        self.group = GroupChat(roomName)
         self.group.switch_window.connect(self.groupChatPageOptions)
         self.connected.close()
         self.group.show()
@@ -345,17 +460,18 @@ class Controller:
     
     def connectedPageOptions(self, option, argument=""):
             if option == 0:
-                self.showPrivateRoom()
+                self.showPrivateRoom(argument)
             elif option == 1:
-                self.showGroupChat()
+                self.showGroupChat(argument)
             elif option == 2:
-                print("clicked on create")
+                self.showGroupChat(argument)
             else:
                 self.showConnect()
     
     def groupChatPageOptions(self, option):
         if option == 0:
             self.group.close()
+            self.connected.setPageOpenTrue()
             self.connected.show()
         else:
             self.showInvitation()
@@ -364,9 +480,6 @@ class Controller:
     def invitationOption(self):
         self.invitation.close()
     
-
-
-
 def main():
     app = QtWidgets.QApplication(sys.argv)
     controller = Controller()
@@ -376,3 +489,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+#python3 chat_server.py --name server --port 10000
