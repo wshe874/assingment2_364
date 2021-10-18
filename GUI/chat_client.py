@@ -4,6 +4,8 @@ import sys
 import signal
 import argparse
 import threading
+import ssl
+
 
 from utils import *
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
@@ -31,6 +33,8 @@ class ChatClient(QObject):
         self.roomHistory = {}
         self.roomMembers = {}
         self.invitationMessage = 'hello'
+
+        self.context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
         
         # Initial prompt
         self.prompt = f'[{name}@{socket.gethostname()}]> '
@@ -38,6 +42,11 @@ class ChatClient(QObject):
         # Connect to server at port
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+            # Client side encryption
+            self.sock = self.context.wrap_socket(
+                self.sock, server_hostname=host)
+
             self.sock.connect((host, self.port))
             print(f'Now connected to chat server@ port {self.port}')
             self.connected = True
@@ -64,8 +73,6 @@ class ChatClient(QObject):
                 data = sys.stdin.readline().strip()
                 if data =="quit":
                     self.cleanup()
-                else:
-                    send(self.sock, data)
             except KeyboardInterrupt:
                 print(" Client interrupted. """)
                 self.cleanup()
@@ -134,6 +141,8 @@ class ChatClient(QObject):
                 messageType = list(data.keys())[0]
                 if messageType == CLIENT_LIST:
                     self.connectedClientMap = data[CLIENT_LIST]
+                    # self.respondConnectCallback()
+
                     self.workerSignal.emit()
                 elif messageType == MESSAGE:
                     self.receivePrivateMessage(data)
@@ -159,9 +168,6 @@ class ChatClient(QObject):
                     self.roomMembers[roomName] = members
                 elif messageType == INVITATION:
                     frame = data[INVITATION]
-                    print("the following invitation message in received")
-                    print(frame)
-                    print("the signal is emitted")
                     self.invitationMessage = frame
                     self.respondeCallback(frame)
 
@@ -194,12 +200,12 @@ class ChatClient(QObject):
     def respondeCallback(self, message):
         self.invitationCallback(message)
     
-    def callbackConnected(self, callback):
-        self.conectedCallback = callback
-    
-    def respondeConnectedCallback(self):
-        print("callback is used")
-        self.conectedCallback()
+    def callbackConnectRegister(self, callback):
+        print("connect registered")
+        self.connectCallback = callback
+
+    def respondConnectCallback(self):
+        self.connectCallback()
 
 if __name__ == "__main__":
     client = ChatClient()

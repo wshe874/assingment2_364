@@ -5,6 +5,7 @@ import signal
 import argparse
 import threading
 import chat_client
+import ssl
 from group_database_server import GroupChatServer, Room
 
 
@@ -20,10 +21,19 @@ class ChatServer(object):
         self.clients = 0
         self.clientmap = {}
         self.outputs = []  # list output sockets
+
+        # Encryption
+        self.context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+        self.context.load_cert_chain(certfile="cert.pem", keyfile="cert.pem")
+        self.context.load_verify_locations('cert.pem')
+        self.context.set_ciphers('AES128-SHA')
+
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind((SERVER_HOST, port))
         self.server.listen(backlog)
+        self.server = self.context.wrap_socket(self.server, server_side=True)
+
         self.groupDatabase = GroupChatServer()
 
         # Catch keyboard interrupts

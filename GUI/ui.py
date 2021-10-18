@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import QApplication, QWidget, QMessageBox, QCheckBox, QList
 
 class Connect(QtWidgets.QWidget):
 
-    switch_window = QtCore.pyqtSignal()
+    switch_window = QtCore.pyqtSignal(int)
 
     def __init__(self):
         QtWidgets.QWidget.__init__(self)
@@ -36,7 +36,7 @@ class Connect(QtWidgets.QWidget):
         connectButton.clicked.connect(self.connect)
 
         cancelButton = QPushButton('Cancel',self)
-        cancelButton.clicked.connect(self.close)
+        cancelButton.clicked.connect(self.closePage)
         hbox.addWidget(connectButton)
         hbox.addWidget(cancelButton)
 
@@ -54,20 +54,25 @@ class Connect(QtWidgets.QWidget):
 
         try:
             self.client = ChatClient()
+            # self.background()
             # Set up a background thread for user input
+            self.client.workerSignal.connect(self.finished) 
             self.threading1 = threading.Thread(target=self.background)
             self.threading1.start()
-            self.client.workerSignal.connect(self.finished)
-            
         except ValueError as e:
             pass
     
+    def closePage(self):
+        self.switch_window.emit(0)
+
     def finished(self):
-        self.switch_window.emit()
+        self.switch_window.emit(1)
     
     # Running on background to receive messages from server
     def background(self):
-        self.client.initialisation(name=self.name, port=int(self.port), host=self.ip)                
+        # self.client.callbackConnectRegister(self.finished)
+        self.client.initialisation(name=self.name, port=int(self.port), host=self.ip)
+               
 class Connected(QtWidgets.QWidget):
     switch_window = QtCore.pyqtSignal(int, list)
 
@@ -148,7 +153,6 @@ class Connected(QtWidgets.QWidget):
     
     def jumpToRoom(self, roomName):
         self.pageOpen = False
-        self.threading1.join()
         client = ChatClient()
         client.roomMembers[roomName] = [client.name]
         self.switch_window.emit(2, [roomName])
@@ -170,21 +174,14 @@ class Connected(QtWidgets.QWidget):
             self.listGroups.addItem(room)
     
     def background(self):
-
         while self.pageOpen is True:
             self.generatePageLists()
-            print("running on the background is:")
-            print(threading.currentThread().getName())
             time.sleep(5)
-        print("thread is about to join")
 
     def setPageOpenTrue(self):
         self.pageOpen = True
     
     def showDialogue(self, message):
-        print("the current thread receives the callbakc")
-        print(threading.currentThread().getName())
-        print("the signal is received!")
         self.switch_window.emit(4, message)
 
 class PrivateChat(QtWidgets.QWidget):
@@ -349,7 +346,6 @@ class GroupChat(QtWidgets.QWidget):
         self.switch_window.emit(0,self.roomName)   
 
     def invite(self):
-        print("invite")
         self.switch_window.emit(1, self.roomName)
     
     def background(self):
@@ -359,7 +355,7 @@ class GroupChat(QtWidgets.QWidget):
             time.sleep(5)
 
 class Invite(QtWidgets.QWidget):
-    switch_window = QtCore.pyqtSignal()
+    switch_window = QtCore.pyqtSignal(str)
 
     def __init__(self, roomName):
         QtWidgets.QWidget.__init__(self)
@@ -405,13 +401,13 @@ class Invite(QtWidgets.QWidget):
         self.resize(500,500)
     
     def back(self):
-        self.switch_window.emit()   
+        self.switch_window.emit(self.roomName)   
 
     def invite(self):
         client = ChatClient()
         client.sendInvitation(self.roomName, self.invitingList)
         self.confirmDialog()
-        self.switch_window.emit()
+        self.switch_window.emit(self.roomName)
     
     def generateNotInRoomList(self):
         client = ChatClient()
@@ -427,12 +423,12 @@ class Invite(QtWidgets.QWidget):
 
         if button == QMessageBox.Ok:
             print("OK!")
+
     
     def addToInvitingList(self):
         items = self.listClients.selectedItems()
         for i in range(len(items)):
             self.invitingList.append(str(self.listClients.selectedItems()[i].text()))
-        print (self.invitingList)
 
 class InvitationDialogue(QtWidgets.QWidget):
     switch_window = QtCore.pyqtSignal(int, str)
@@ -482,8 +478,18 @@ class Controller:
 
     def showConnect(self):
         self.connect = Connect()
-        self.connect.switch_window.connect(self.showConnected)
+        self.connect.switch_window.connect(self.connectOptions)
         self.connect.show()
+    
+    def connectOptions(self, option):
+        if option == 0:
+            print("close operations")
+            self.connect.close()
+            client = ChatClient()
+            client.cleanup()
+        else:
+            print("option is not used")
+            self.showConnected()
     
     def showConnected(self):
         self.connected = Connected()
@@ -531,6 +537,7 @@ class Controller:
             elif option == 2:
                 self.showGroupChat(argument[0])
             elif option == 3:
+                self.connected.close()
                 self.showConnect()
             else:
                 self.showInvitationDialogue(argument)
@@ -560,6 +567,7 @@ def main():
     controller = Controller()
     controller.showConnect()
     sys.exit(app.exec_())
+    
 
 
 if __name__ == '__main__':
