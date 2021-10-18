@@ -9,16 +9,11 @@ from utils import *
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
 SERVER_HOST = 'localhost'
-REQUEST_CREATE_ROOM = 'requestCreateRoom'
-MESSAGE = 'message'
-CLIENT_LIST = 'clientList'
-GROUP_LIST = 'groupList'
-GROUP_MESSAGE = 'groupMessage'
-REQUEST_JOIN_ROOM = 'requestJoinRoom'
 
 class ChatClient(QObject):
     workerSignal = pyqtSignal()
     createRoomSignal = pyqtSignal(str)
+    inivationSignal = pyqtSignal(str)
 
     def __new__(cls):
         if not hasattr(cls, 'instance'):
@@ -35,6 +30,7 @@ class ChatClient(QObject):
         self.chatHistory = {}
         self.roomHistory = {}
         self.roomMembers = {}
+        self.invitationMessage = 'hello'
         
         # Initial prompt
         self.prompt = f'[{name}@{socket.gethostname()}]> '
@@ -103,12 +99,9 @@ class ChatClient(QObject):
             # Formating a message to send to server
             messageDict={}
             messageDict[roomName] = [self.name,message]
-            print("The groupt message sent is:")
-            print(messageDict)
             sendGroupMessage(self.sock, messageDict)
         except socket.error as e:
             pass
-
 
     def getConnectedClientAddress(self, name):
         for key in self.connectedClientMap.keys():
@@ -148,16 +141,12 @@ class ChatClient(QObject):
                     roomName = data[REQUEST_CREATE_ROOM]
                     self.roomHistory[roomName] = []
                     self.roomMembers[roomName] = []
-                    print("The client has updated the following group message")
-                    print(self.roomHistory)
                     self.createRoomSignal.emit(roomName)
                 elif messageType == GROUP_MESSAGE:
                     frame = data[GROUP_MESSAGE]
                     roomName = list(frame.keys())[0]
                     message = frame[roomName]
                     self.roomHistory[roomName].append(message)
-                    print("The client has updated the following group message")
-                    print(self.roomHistory)
                 elif messageType == GROUP_LIST:
                     frame = data[GROUP_LIST]
                     if frame != None:
@@ -168,6 +157,14 @@ class ChatClient(QObject):
                     roomName = list(frame.keys())[0]
                     members = frame[roomName]
                     self.roomMembers[roomName] = members
+                elif messageType == INVITATION:
+                    frame = data[INVITATION]
+                    print("the following invitation message in received")
+                    print(frame)
+                    print("the signal is emitted")
+                    self.invitationMessage = frame
+                    self.respondeCallback(frame)
+
 
     def receivePrivateMessage(self, data):
         messageData = list(data.values())[0]
@@ -185,10 +182,24 @@ class ChatClient(QObject):
         dataToSend = {}
         dataToSend[roomName] = self.name
         sendJoinRoomRequest(self.sock, dataToSend)
+    
+    def sendInvitation(self, roomName, invitingList):
+        dataToSend = {}
+        dataToSend[roomName] = invitingList
+        sendInvitation(self.sock, dataToSend)
+    
+    def callbackRegister(self, callback):
+        self.invitationCallback = callback
 
-
-                
-
+    def respondeCallback(self, message):
+        self.invitationCallback(message)
+    
+    def callbackConnected(self, callback):
+        self.conectedCallback = callback
+    
+    def respondeConnectedCallback(self):
+        print("callback is used")
+        self.conectedCallback()
 
 if __name__ == "__main__":
     client = ChatClient()

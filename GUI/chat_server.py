@@ -111,17 +111,20 @@ class ChatServer(object):
                         data = receive(sock)
                         if data:
                             messageType = list(data.keys())[0]
-                            if messageType == "message":
+                            if messageType == MESSAGE:
                                 self.processMessage(data)
 
-                            if messageType == "requestCreateRoom":
+                            if messageType == REQUEST_CREATE_ROOM:
                                 self.processCreateRoomRequest(data)
                             
-                            if messageType == "groupMessage":
+                            if messageType == GROUP_MESSAGE:
                                 self.processGroupMessage(sock, data)
                             
-                            if messageType == "requestJoinRoom":
+                            if messageType == REQUEST_JOIN_ROOM:
                                 self.procecessJoinRoomRequest(data)
+
+                            if messageType == INVITATION:
+                                self.processInvitation(sock, data)
 
                         else:
                             print(f'Chat server: {sock.fileno()} hung up')
@@ -144,7 +147,7 @@ class ChatServer(object):
         self.server.close()
 
     def processMessage(self, data):
-        frame = data["message"]
+        frame = data[MESSAGE]
         receiverAddress = frame[0]
         message = frame[1]
         for clientSocket in self.clientmap.keys():
@@ -154,7 +157,7 @@ class ChatServer(object):
                 break
 
     def processCreateRoomRequest(self, data):
-        creatorName = data["requestCreateRoom"]
+        creatorName = data[REQUEST_CREATE_ROOM]
         assignedPort = self.getClientAssignedPort(creatorName)
         creatorSock = self.getClientSocket(creatorName)
         roomName = self.groupDatabase.createRoom(creatorName, creatorSock, assignedPort)
@@ -163,8 +166,8 @@ class ChatServer(object):
         for clientSocket in self.outputs:
             sendCreateRoomRequest(clientSocket, roomName)
 
-    def processGroupMessage(self,sock, data):
-        frame = data["groupMessage"]
+    def processGroupMessage(self, sock, data):
+        frame = data[GROUP_MESSAGE]
         roomName = list(frame.keys())[0]
         memberSockets = self.groupDatabase.getAllRoomMemberSockets(roomName)
         for memberSocket in memberSockets:
@@ -174,7 +177,7 @@ class ChatServer(object):
                 sendGroupMessage(memberSocket, frame)
 
     def procecessJoinRoomRequest(self, data):
-        frame = data["requestJoinRoom"]
+        frame = data[REQUEST_JOIN_ROOM]
         roomName = list(frame.keys())[0]
         clientName = frame[roomName]
 
@@ -194,6 +197,17 @@ class ChatServer(object):
         for memberSocket in memberSockets:
             sendJoinRoomRequest(memberSocket, dataToSend)
     
+    def processInvitation(self, sock, data):
+        frame = data[INVITATION]
+        roomName = list(frame.keys())[0]
+        inviterName = self.getClientName(sock)
+        invitedClients = frame[roomName]
+        for sock in self.clientmap.keys():
+            for client in invitedClients:
+                if client == self.clientmap[sock][1]:
+                    message = [inviterName,roomName]
+                    sendInvitation(sock, message)
+
     def getClientAssignedPort(self, clientName):
         for key in self.clientmap.keys():
                 value = self.clientmap[key]
@@ -206,7 +220,11 @@ class ChatServer(object):
                 value = self.clientmap[key]
                 if clientName == value[1]:
                     return key
-
+    
+    def getClientName(self, socket):
+        for sock in self.clientmap.keys():
+            if socket == sock:
+                return self.clientmap[sock][1]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

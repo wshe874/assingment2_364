@@ -2,6 +2,15 @@ import socket
 import pickle
 import struct
 
+INVITATION = 'invitation'
+SERVER_HOST = 'localhost'
+REQUEST_CREATE_ROOM = 'requestCreateRoom'
+MESSAGE = 'message'
+CLIENT_LIST = 'clientList'
+GROUP_LIST = 'groupList'
+GROUP_MESSAGE = 'groupMessage'
+REQUEST_JOIN_ROOM = 'requestJoinRoom'
+
 def send(channel, *args):
     buffer = pickle.dumps(args)
     value = socket.htonl(len(buffer))
@@ -51,3 +60,7 @@ def sendCreateRoomRequest(channel, message):
 def sendJoinRoomRequest(channel, message):
     data = {"requestJoinRoom":message}
     send(channel,data)
+
+def sendInvitation(channel, message):
+    data = {"invitation":message}
+    send(channel, data)
