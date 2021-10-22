@@ -479,14 +479,12 @@ class Controller:
         pass
 
     def showConnect(self):
-        print("should show=================")
         self.connect = Connect()
         self.connect.switch_window.connect(self.connectOptions)
         self.connect.show()
     
     def connectOptions(self, option):
         if option == 0:
-            print("close operations")
             self.connect.close()
             client = ChatClient()
             client.cleanup()

@@ -61,7 +61,6 @@ class ChatServer(object):
         while True:
             cmd = sys.stdin.readline().strip()
             if cmd == 'list':
-                print(self.clientmap.values())
                 for output in self.outputs:
                     sendClientList(output, self.clientmap.values())
             elif cmd == 'quit':
@@ -150,7 +149,6 @@ class ChatServer(object):
                                 sendMessage(output, msg)
                     except socket.error as e:
                         print("no socket is found")
-                        # Remove
                         inputs.remove(sock)
                         self.outputs.remove(sock)
                         

@@ -205,6 +205,3 @@ class ChatClient(QObject):
 
     def respondConnectCallback(self):
         self.connectCallback()
-
-
-#python3 chat_client.py --name ser --port 10000
